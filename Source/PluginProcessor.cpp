@@ -11,11 +11,15 @@ FDNReverbAudioProcessor::FDNReverbAudioProcessor()
 void FDNReverbAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     int osIdx = (int)*apvts.getRawParameterValue(ParamID::Oversampling);
     oversampler = std::make_unique<juce::dsp::Oversampling<float>>(2, osIdx, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
-    oversampler->initProcessing(samplesPerBlock);
+    oversampler->initProcessing(static_cast<size_t>(samplesPerBlock));
 
-    juce::dsp::ProcessSpec spec{ sampleRate * (1 << osIdx), (juce::uint32)(samplesPerBlock * (1 << osIdx)), 2 };
-    engine.prepare(spec);
-    wetBuffer.setSize(2, samplesPerBlock * (1 << osIdx));
+    double osSampleRate = sampleRate * (1 << osIdx);
+    int osBlockSize = samplesPerBlock * (1 << osIdx);
+
+    // 新エンジンの初期化
+    engine.prepare(osSampleRate, osBlockSize);
+
+    wetBuffer.setSize(2, osBlockSize);
     smoothWetGain.reset(sampleRate, 0.05); smoothDryGain.reset(sampleRate, 0.05);
     lastSampleRate = sampleRate;
 }
@@ -25,6 +29,7 @@ void FDNReverbAudioProcessor::updateEngineParams() {
     p.algorithmIndex = (int)*apvts.getRawParameterValue(ParamID::Algorithm);
     p.preDelayMs = *apvts.getRawParameterValue(ParamID::PreDelay);
     p.roomSizeScale = *apvts.getRawParameterValue(ParamID::RoomSize) - 0.5f;
+    // 注：ALL_PRESETS が AlgorithmPresets.h にある前提です
     p.decayScale = *apvts.getRawParameterValue(ParamID::DecayTime) / ALL_PRESETS[p.algorithmIndex]->acoustics.rt60[4];
     p.hfDamping = *apvts.getRawParameterValue(ParamID::HFDamping);
     p.lfAbsorption = *apvts.getRawParameterValue(ParamID::LFAbsorption);
@@ -44,6 +49,8 @@ void FDNReverbAudioProcessor::updateEngineParams() {
 
     smoothWetGain.setTargetValue(juce::Decibels::decibelsToGain(p.wetDB));
     smoothDryGain.setTargetValue(juce::Decibels::decibelsToGain(p.dryDB));
+
+    // 新エンジンへパラメータ送信
     engine.setParams(p);
 }
 
@@ -56,15 +63,21 @@ void FDNReverbAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
 
     juce::dsp::AudioBlock<float> block(buffer);
     auto osBlock = oversampler->processSamplesUp(block);
-    wetBuffer.setSize(2, (int)osBlock.getNumSamples(), false, false, true);
 
-    engine.processBlock(osBlock.getChannelPointer(0), osBlock.getChannelPointer(1), wetBuffer.getWritePointer(0), wetBuffer.getWritePointer(1), (int)osBlock.getNumSamples());
+    int numSamples = static_cast<int>(osBlock.getNumSamples());
+    wetBuffer.setSize(2, numSamples, false, false, true);
 
-    for (int i = 0; i < (int)osBlock.getNumSamples(); ++i) {
-        float w = smoothWetGain.getNextValue(), d = smoothDryGain.getNextValue();
+    // 新エンジンのオーディオ処理を呼び出し
+    engine.processBlock(osBlock.getChannelPointer(0), osBlock.getChannelPointer(1),
+        wetBuffer.getWritePointer(0), wetBuffer.getWritePointer(1), numSamples);
+
+    for (int i = 0; i < numSamples; ++i) {
+        float w = smoothWetGain.getNextValue();
+        float d = smoothDryGain.getNextValue();
         osBlock.setSample(0, i, osBlock.getSample(0, i) * d + wetBuffer.getSample(0, i) * w);
         osBlock.setSample(1, i, osBlock.getSample(1, i) * d + wetBuffer.getSample(1, i) * w);
     }
+
     oversampler->processSamplesDown(block);
 
     outputRMS_L.store(buffer.getRMSLevel(0, 0, buffer.getNumSamples()));

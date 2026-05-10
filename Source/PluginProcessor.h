@@ -1,6 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
-#include "DSP/FDNReverbEngine.h"
+#include "DSP/UniversalEngine.h" // ← ここを変更
 #include "PluginParameters.h"
 
 class FDNReverbAudioProcessor : public juce::AudioProcessor {
@@ -9,13 +9,13 @@ public:
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override { engine.reset(); }
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed(juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
     const juce::String getName() const override { return "Ambience"; }
     double getTailLengthSeconds() const override { return 20.0; }
 
-    // ─── 追加：抽象クラスエラーを回避するための必須オーバーライド ───
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -25,7 +25,6 @@ public:
     void setCurrentProgram(int) override {}
     const juce::String getProgramName(int) override { return {}; }
     void changeProgramName(int, const juce::String&) override {}
-    // ────────────────────────────────────────────────────────────────
 
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
@@ -39,7 +38,9 @@ public:
 
 private:
     void updateEngineParams();
-    FDNReverb::FDNReverbEngine engine;
+
+    FDNReverb::UniversalEngine engine; // ← ここを変更
+
     std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
     juce::AudioBuffer<float> wetBuffer;
     juce::SmoothedValue<float> smoothWetGain, smoothDryGain;

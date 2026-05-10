@@ -39,20 +39,34 @@ juce_add_plugin(Ambience
 # ソース（存在するファイルのみ）
 # ============================================================================
 target_sources(Ambience PRIVATE
+    # プラグインコア
     Source/PluginProcessor.h
     Source/PluginProcessor.cpp
     Source/PluginEditor.h
     Source/PluginEditor.cpp
-    
-    
-    Source/AlgorithmPresets.h
- "Source/GUI/AmbienceUI.h" "Source/GUI/AmbienceUI.cpp" "Source/DSP/DSPConstants.h" "Source/DSP/BiquadFilters.h" "Source/DSP/BiquadFilters.cpp" "Source/DSP/SAPFStage.h" "Source/DSP/SAPFStage.cpp" "Source/DSP/EarlyReflections.h" "Source/DSP/EarlyReflections.cpp" "Source/DSP/DelayUnit.h" "Source/DSP/DelayUnit.cpp" "Source/PluginParameters.h" "Source/PluginParameters.cpp" "Source/DSP/FDNReverbEngine.h" "Source/DSP/FDNReverbEngine.cpp")
+    Source/PluginParameters.h
+    Source/PluginParameters.cpp
 
+    # GUIモジュール
+    Source/GUI/AmbienceUI.h
+    Source/GUI/AmbienceUI.cpp
+
+    # DSPモジュール
+    Source/AlgorithmPresets.h
+    Source/DSP/DSPConstants.h
+    Source/DSP/DelayMemory.h
+    Source/DSP/BiquadFilters.h
+    Source/DSP/BiquadFilters.cpp
+    Source/DSP/UniversalEngine.h
+    Source/DSP/UniversalEngine.cpp
+)
 # ============================================================================
 # インクルードパス
 # ============================================================================
 target_include_directories(Ambience PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Source
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source/DSP
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source/GUI
 )
 
 # ============================================================================
