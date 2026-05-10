@@ -108,32 +108,54 @@ namespace FDNReverb {
         for (int i = 0; i < FDN_ORDER; ++i) {
             currentAbsorptionCoeffs[i] = FilterDesign::designAbsorption(
                 static_cast<int>(fdnBaseDelaySamples[i]), fs, scaledRT60,
-                activeParams.hfDamping, activeParams.lfAbsorption)[0]; // 簡略化：今回は代表フィルタ1つ
+                activeParams.hfDamping, activeParams.lfAbsorption)[0];
         }
 
-        // トポロジーごとのスイッチング
+        // ─── 動的 Auto Gain Compensation (AGC) の計算 ───
+
+        // 1. 基準となるRT60（500Hz帯域）を取得
+        float rt60Mid = std::max(0.1f, scaledRT60[4]);
+
+        // 2. 減衰時間に対する動的ゲイン補償カーブ（Decay Compensation）
+        // エネルギーが時間方向に引き伸ばされることによるRMS低下を補正します。
+        // RT60が倍になれば +3dB（エネルギー半減を補償）する対数カーブ。基準を1.0秒とします。
+        float decayCompDB = 10.0f * std::log10(rt60Mid / 1.0f);
+
+        // 3. トポロジー（アルゴリズム）ごとの固定オフセット
+        float topologyOffsetDB = 0.0f;
+
         switch (currentTopology) {
         case ReverbTopology::Room:
             bypassER = false; bypassInputDiffusers = true;
-            apfGain = 0.3f; // 浅いSmearing
+            apfGain = 0.3f;
+            topologyOffsetDB = 0.0f; // トランジェントが残るため補償なし（基準）
             break;
         case ReverbTopology::Hall:
             bypassER = false; bypassInputDiffusers = false;
-            apfGain = 0.618f; // 黄金比による深いSmearing
+            apfGain = 0.618f;
+            topologyOffsetDB = 1.5f; // 少しSmearingされる分を微補償
             break;
         case ReverbTopology::Plate:
             bypassER = true; bypassInputDiffusers = false;
-            apfGain = 0.7f; // 強烈な初期拡散
+            apfGain = 0.7f;
+            topologyOffsetDB = 4.5f; // ERがなく即座に拡散するため大幅に補償
             break;
         case ReverbTopology::Spring:
             bypassER = true; bypassInputDiffusers = false;
             apfGain = 0.5f;
+            topologyOffsetDB = 5.0f; // 分散特性が強いため大幅補償
             break;
         case ReverbTopology::Goldfoil:
             bypassER = true; bypassInputDiffusers = false;
-            apfGain = 0.75f; // 自己増殖ネットワーク
+            apfGain = 0.75f;
+            topologyOffsetDB = 6.0f; // 完全に自己増殖ネットワークに食われるため最大補償
             break;
         }
+
+        // 4. 最終的なメイクアップゲインの適用
+        // Baseの 24.0dB は、16次マトリクスとユーザーが検証した「固定のエネルギー損失」を相殺するキャリブレーション値
+        float totalLateMakeupDB = 24.0f + decayCompDB + topologyOffsetDB;
+        lateMakeupGainLinear = juce::Decibels::decibelsToGain(totalLateMakeupDB);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -242,9 +264,15 @@ namespace FDNReverb {
             fbVec = nextFb; // 状態更新
 
             // 4. 最終出力 (ER + Late)
+            // ERはマトリクスを通っていないため、メイクアップゲインの対象外
             float erMix = bypassER ? 0.0f : erOut * activeParams.erLevel;
-            outL[n] = (erMix + fdnOutL) * wetGain;
-            outR[n] = (erMix + fdnOutR) * wetGain;
+
+            // Late（FDN出力）に動的メイクアップゲインと、ユーザーのLateLevelパラメータを掛ける
+            float lateMixL = fdnOutL * lateMakeupGainLinear * activeParams.lateLevel;
+            float lateMixR = fdnOutR * lateMakeupGainLinear * activeParams.lateLevel;
+
+            outL[n] = (erMix + lateMixL) * wetGain;
+            outR[n] = (erMix + lateMixR) * wetGain;
         }
     }
 

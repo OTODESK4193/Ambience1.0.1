@@ -89,6 +89,10 @@ namespace FDNReverb {
         bool bypassER{ false };
         bool bypassInputDiffusers{ true };
         float lateMixScale{ 1.0f };
+
+        // ▼ 追加：動的メイクアップゲイン（Late Reverb専用）
+        float lateMakeupGainLinear{ 1.0f };
+
         std::array<float, NUM_BANDS> effectiveRT60;
     };
 
