@@ -69,6 +69,10 @@ namespace FDNReverb {
         std::array<LinearDelayLine, 4> inputDiffusers;
         std::array<LinearDelayLine, FDN_ORDER> fdnDelays;
         std::array<LinearDelayLine, FDN_ORDER> nestedAllpassDelays;
+        // 現在のERパターン（プリセット選択時に更新）
+        int currentERTapCount{ 0 };
+        std::array<float, MAX_ER_TAPS> currentERDelaySamples;
+        std::array<float, MAX_ER_TAPS> currentERGains;
 
 #if AMBIENCE_USE_STAGE2_ABSORPTION
         std::array<std::array<BiquadState, ABSO_STAGES_S2>, FDN_ORDER> absorptionFiltersS2;
