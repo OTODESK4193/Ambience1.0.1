@@ -6,6 +6,7 @@
 #include "../PluginParameters.h"
 #include <array>
 #include <random>
+#include "Saturator.h"
 
 #define AMBIENCE_USE_STAGE2_ABSORPTION 1
 
@@ -51,6 +52,8 @@ namespace FDNReverb {
         float getC50() const noexcept { return acousticMetrics.getC50(); }
         float getC80() const noexcept { return acousticMetrics.getC80(); }
         float getEDT() const noexcept { return theoreticalEDT; }
+
+
 
         // ─── 追加: 描画用 AcousticMetrics への参照 ───
         const AcousticMetrics& getAcousticMetrics() const noexcept { return acousticMetrics; }
@@ -111,5 +114,10 @@ namespace FDNReverb {
 
         // ─── 追加: AcousticMetrics インスタンス ───
         AcousticMetrics acousticMetrics;
+
+        // ─── Saturator (L/R 独立) ───
+        Saturator saturatorL;
+        Saturator saturatorR;
+
     };
 }  // namespace FDNReverb

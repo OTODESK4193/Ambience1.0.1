@@ -57,6 +57,11 @@ namespace FDNReverb {
 #endif
         // ─── 追加: AcousticMetrics リセット ───
         acousticMetrics.reset();
+
+        // ─── Saturator リセット ───
+        saturatorL.reset();
+        saturatorR.reset();
+
     }
     void UniversalEngine::setParams(const DSPParams& p) {
         activeParams = p;
@@ -195,6 +200,25 @@ namespace FDNReverb {
         }
         theoreticalEDT = rt60Mid * edtCoeff;
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // Saturator 設定
+        // ─────────────────────────────────────────────────────────────────────────
+        // プリセット別のサチュレーション特性係数
+        // Plate/Spring/Goldfoil は金属系で強めの倍音、Room/Hall は控えめ
+        float saturationMultiplier = 1.0f;
+        switch (currentTopology) {
+        case ReverbTopology::Room:     saturationMultiplier = 0.6f; break;
+        case ReverbTopology::Hall:     saturationMultiplier = 0.7f; break;
+        case ReverbTopology::Plate:    saturationMultiplier = 1.0f; break;
+        case ReverbTopology::Spring:   saturationMultiplier = 1.2f; break;  // 最強
+        case ReverbTopology::Goldfoil: saturationMultiplier = 1.1f; break;
+        }
+        float effectiveSatAmount = activeParams.saturation * saturationMultiplier;
+        effectiveSatAmount = juce::jlimit(0.0f, 1.0f, effectiveSatAmount);
+        saturatorL.setAmount(effectiveSatAmount);
+        saturatorR.setAmount(effectiveSatAmount);
+
+
         float totalLateMakeupDB = baseDB + decayCompDB + algoOffset;
         lateMakeupGainLinear = juce::Decibels::decibelsToGain(totalLateMakeupDB);
     }
@@ -326,8 +350,15 @@ namespace FDNReverb {
             // AcousticMetrics に Wet 信号を入力（モノミックス）
             float wetMono = (lateMixL + lateMixR) * 0.5f;
             acousticMetrics.processSample(wetMono);
-            outL[n] = (erMixL + lateMixL) * wetGain;
-            outR[n] = (erMixR + lateMixR) * wetGain;
+            // ─── Saturation 適用 (Wet 信号のみ) ───
+                 // 資料の Valhalla 知見: FDN ループ出力段にサチュレーションを配置することで
+                 // フィードバックを通じて倍音が蓄積し、「Spectral Plasma」が形成される
+            float satL = saturatorL.processSample(lateMixL);
+            float satR = saturatorR.processSample(lateMixR);
+
+            // 最終出力（ER は線形のまま、Late のみ Saturation 適用）
+            outL[n] = (erMixL + satL) * wetGain;
+            outR[n] = (erMixR + satR) * wetGain;
         }
     }
 } // namespace FDNReverb
