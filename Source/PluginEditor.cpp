@@ -10,6 +10,17 @@ static constexpr int Y_ROW2 = 222;
 static constexpr int Y_SEP = 322;
 static constexpr int Y_VIZ = 326;
 
+// ─── Row1 セクション X 座標 (Normal Mode) ───
+static constexpr int SEC_TIME = 8;
+static constexpr int SEC_FREQUENCY = 254;
+static constexpr int SEC_DIFFUSION = 418;
+static constexpr int SEC_STEREO = 664;
+static constexpr int SEC_CHARACTER = 746;
+static constexpr int SEP_TF = 245;
+static constexpr int SEP_FD = 409;
+static constexpr int SEP_DS = 655;
+static constexpr int SEP_SC = 737;
+
 FDNReverbEditor::FDNReverbEditor(FDNReverbAudioProcessor& p)
     : AudioProcessorEditor(&p),
     audioProcessor(p),
@@ -41,7 +52,6 @@ FDNReverbEditor::FDNReverbEditor(FDNReverbAudioProcessor& p)
     BK(kModAmt, "modamount", "MOD AMT");
     BK(kModRate, "modrate", "MOD RATE");
     BK(kStereoW, "stereowidth", "WIDTH");
-    BK(kCrossFeed, "crossfeed", "X-FEED");
     BK(kERLevel, "erlevel", "ER LEVEL");
     BK(kSaturation, "saturation", "SATURATE");
     BK(kWet, "wetlevel", "WET");
@@ -50,6 +60,10 @@ FDNReverbEditor::FDNReverbEditor(FDNReverbAudioProcessor& p)
     BK(kDuckThr, "duckthresh", "THRESH");
     BK(kDuckAtt, "duckattack", "ATTACK");
     BK(kDuckRel, "duckrelease", "RELEASE");
+
+    // ★ Phase 5: Output EQ ノブ (Normal Mode 用)
+    BK(kLoCutNorm, "locut", "LO CUT");
+    BK(kHiCutNorm, "hicut", "HI CUT");
 
     proModeButton.setButtonText("PRO");
     proModeButton.setClickingTogglesState(true);
@@ -100,6 +114,11 @@ FDNReverbEditor::FDNReverbEditor(FDNReverbAudioProcessor& p)
     BK(kTiltLow, "tiltlow", "TILT LOW");
     BK(kTiltMid, "tiltmid", "TILT MID");
     BK(kTiltHigh, "tilthigh", "TILT HIGH");
+
+    // ★ Phase 5: Output EQ ノブ (ProMode 用)
+    // Normal Mode 版と同じ APVTS パラメータに紐付くため値は同期する
+    BK(kLoCutPro, "locut", "LO CUT");
+    BK(kHiCutPro, "hicut", "HI CUT");
 
     rt60Viz.setProcessor(&p);
     decayCurveViz.setProcessor(&p);
@@ -207,7 +226,6 @@ void FDNReverbEditor::updatePanelVisibility()
     setKnob(kModAmt, showNormal);
     setKnob(kModRate, showNormal);
     setKnob(kStereoW, showNormal);
-    setKnob(kCrossFeed, showNormal);
     setKnob(kERLevel, showNormal);
     setKnob(kSaturation, showNormal);
     setKnob(kWet, showNormal);
@@ -216,6 +234,8 @@ void FDNReverbEditor::updatePanelVisibility()
     setKnob(kDuckThr, showNormal);
     setKnob(kDuckAtt, showNormal);
     setKnob(kDuckRel, showNormal);
+    setKnob(kLoCutNorm, showNormal);   // ★ Phase 5
+    setKnob(kHiCutNorm, showNormal);   // ★ Phase 5
 
     for (auto& k : kRTBands) setKnob(k, showPro);
     satTypeLabel.setVisible(showPro);
@@ -223,6 +243,8 @@ void FDNReverbEditor::updatePanelVisibility()
     setKnob(kTiltLow, showPro);
     setKnob(kTiltMid, showPro);
     setKnob(kTiltHigh, showPro);
+    setKnob(kLoCutPro, showPro);       // ★ Phase 5
+    setKnob(kHiCutPro, showPro);       // ★ Phase 5
 }
 
 void FDNReverbEditor::resized()
@@ -235,60 +257,66 @@ void FDNReverbEditor::resized()
 
     algoSelector.setBounds(PAD, Y_ALGO, W - PAD * 2, 30);
 
-    auto place = [&](ArcKnob& k, int& x, int y) {
+    auto place1 = [&](ArcKnob& k, int& x, int y) {
+        k.label.setBounds(x, y, KNOB_W, KNOB_LBL_H);
+        k.slider.setBounds(x, y + KNOB_LBL_H, KNOB_W, KNOB_H);
+        x += KNOB_W + ROW1_GAP;
+        };
+    auto place2 = [&](ArcKnob& k, int& x, int y) {
         k.label.setBounds(x, y, KNOB_W, KNOB_LBL_H);
         k.slider.setBounds(x, y + KNOB_LBL_H, KNOB_W, KNOB_H);
         x += KNOB_W + PAD;
         };
 
     if (!isProMode) {
+        // ── Row 1 ──
         int kx = PAD;
-        place(kPreDelay, kx, Y_ROW1);
-        place(kRoomSize, kx, Y_ROW1);
-        place(kDecay, kx, Y_ROW1);
-        kx += 6;
-        place(kHFDamp, kx, Y_ROW1);
-        place(kLFAbsorb, kx, Y_ROW1);
-        kx += 6;
-        place(kDiffusion, kx, Y_ROW1);
-        place(kModAmt, kx, Y_ROW1);
-        place(kModRate, kx, Y_ROW1);
-        kx += 6;
-        place(kStereoW, kx, Y_ROW1);
-        place(kCrossFeed, kx, Y_ROW1);
-        kx += 6;
-        place(kERLevel, kx, Y_ROW1);
-        place(kSaturation, kx, Y_ROW1);
+        place1(kPreDelay, kx, Y_ROW1);
+        place1(kRoomSize, kx, Y_ROW1);
+        place1(kDecay, kx, Y_ROW1);
+        place1(kHFDamp, kx, Y_ROW1);
+        place1(kLFAbsorb, kx, Y_ROW1);
+        place1(kDiffusion, kx, Y_ROW1);
+        place1(kModAmt, kx, Y_ROW1);
+        place1(kModRate, kx, Y_ROW1);
+        place1(kStereoW, kx, Y_ROW1);
+        place1(kERLevel, kx, Y_ROW1);
+        place1(kSaturation, kx, Y_ROW1);
 
+        // ── Row 2: MIX | OUT EQ | DUCKING ──
         kx = PAD;
-        place(kWet, kx, Y_ROW2);
-        place(kDry, kx, Y_ROW2);
+        place2(kWet, kx, Y_ROW2);
+        place2(kDry, kx, Y_ROW2);
         kx += 16;
-        place(kDuckAmt, kx, Y_ROW2);
-        place(kDuckThr, kx, Y_ROW2);
-        place(kDuckAtt, kx, Y_ROW2);
-        place(kDuckRel, kx, Y_ROW2);
+        place2(kLoCutNorm, kx, Y_ROW2);   // ★ Phase 5
+        place2(kHiCutNorm, kx, Y_ROW2);
+        kx += 16;
+        place2(kDuckAmt, kx, Y_ROW2);
+        place2(kDuckThr, kx, Y_ROW2);
+        place2(kDuckAtt, kx, Y_ROW2);
+        place2(kDuckRel, kx, Y_ROW2);
 
     }
     else {
-        // ── ProMode 1段目: RT60 帯域ノブ × 10 ──
+        // ── ProMode 1段目 ──
         {
             int kx = PAD;
             for (int i = 0; i < 10; ++i)
-                place(kRTBands[i], kx, Y_ROW1);
+                place1(kRTBands[i], kx, Y_ROW1);
         }
 
-        // ── ProMode 2段目: SatType + Tilt EQ ──
+        // ── ProMode 2段目: SatType + Tilt EQ + Output EQ ──
         {
             int kx2 = PAD;
-
             satTypeLabel.setBounds(kx2, Y_SLABEL2, KNOB_W, KNOB_LBL_H);
             satTypeCombo.setBounds(kx2, Y_SLABEL2 + KNOB_LBL_H + 2, KNOB_W + PAD, 24);
             kx2 += KNOB_W + PAD + PAD + 8;
-
-            place(kTiltLow, kx2, Y_ROW2);
-            place(kTiltMid, kx2, Y_ROW2);
-            place(kTiltHigh, kx2, Y_ROW2);
+            place2(kTiltLow, kx2, Y_ROW2);
+            place2(kTiltMid, kx2, Y_ROW2);
+            place2(kTiltHigh, kx2, Y_ROW2);
+            kx2 += 16;
+            place2(kLoCutPro, kx2, Y_ROW2);   // ★ Phase 5
+            place2(kHiCutPro, kx2, Y_ROW2);
         }
     }
 
@@ -343,51 +371,57 @@ void FDNReverbEditor::paint(juce::Graphics& g)
 
     g.setFont(juce::Font(juce::FontOptions(
         "Helvetica Neue", 8.5f, juce::Font::bold)));
-    g.setColour(AmbienceColors::Accent.withAlpha(0.75f));
 
     auto sl = [&](int x, int y, const char* t) {
         g.drawText(t, x, y, 160, 14, juce::Justification::centredLeft);
         };
 
     if (!isProMode) {
-        static const int gw[] = { 3, 2, 3, 2, 2 };
-        int lx = PAD;
+        // ── Row 1 セパレーター ──
         g.setColour(AmbienceColors::Separator);
-        for (int gi = 0; gi < 4; ++gi) {
-            lx += gw[gi] * (KNOB_W + PAD) + 6;
-            g.drawVerticalLine(lx - 3, (float)Y_SLABEL1, (float)(Y_ROW1 + UNIT_H));
-        }
-        int lx2 = PAD + 2 * (KNOB_W + PAD) + 16;
-        g.drawVerticalLine(lx2 - 3, (float)Y_SLABEL2, (float)(Y_ROW2 + UNIT_H));
+        g.drawVerticalLine(SEP_TF, (float)Y_SLABEL1, (float)(Y_ROW1 + UNIT_H));
+        g.drawVerticalLine(SEP_FD, (float)Y_SLABEL1, (float)(Y_ROW1 + UNIT_H));
+        g.drawVerticalLine(SEP_DS, (float)Y_SLABEL1, (float)(Y_ROW1 + UNIT_H));
+        g.drawVerticalLine(SEP_SC, (float)Y_SLABEL1, (float)(Y_ROW1 + UNIT_H));
 
+        // ── Row 2 セパレーター (MIX | OUT EQ | DUCKING) ──
+        // 各セクションの開始 X (place2 と同じ計算式)
+        const int row2_mix_x = PAD;
+        const int row2_outeq_x = PAD + 2 * (KNOB_W + PAD) + 16;
+        const int row2_duck_x = row2_outeq_x + 2 * (KNOB_W + PAD) + 16;
+
+        g.drawVerticalLine(row2_outeq_x - 9, (float)Y_SLABEL2, (float)(Y_ROW2 + UNIT_H));
+        g.drawVerticalLine(row2_duck_x - 9, (float)Y_SLABEL2, (float)(Y_ROW2 + UNIT_H));
+
+        // ── セクション名 ──
         g.setColour(AmbienceColors::Accent.withAlpha(0.75f));
-        int bx = PAD;
-        sl(bx, Y_SLABEL1, "TIME");
-        bx += gw[0] * (KNOB_W + PAD) + 6;
-        sl(bx, Y_SLABEL1, "FREQUENCY");
-        bx += gw[1] * (KNOB_W + PAD) + 6;
-        sl(bx, Y_SLABEL1, "DIFFUSION");
-        bx += gw[2] * (KNOB_W + PAD) + 6;
-        sl(bx, Y_SLABEL1, "STEREO");
-        bx += gw[3] * (KNOB_W + PAD) + 6;
-        sl(bx, Y_SLABEL1, "CHARACTER");
+        sl(SEC_TIME, Y_SLABEL1, "TIME");
+        sl(SEC_FREQUENCY, Y_SLABEL1, "FREQUENCY");
+        sl(SEC_DIFFUSION, Y_SLABEL1, "DIFFUSION");
+        sl(SEC_STEREO, Y_SLABEL1, "STEREO");
+        sl(SEC_CHARACTER, Y_SLABEL1, "CHARACTER");
 
-        bx = PAD;
-        sl(bx, Y_SLABEL2, "MIX");
-        bx += 2 * (KNOB_W + PAD) + 16;
-        sl(bx, Y_SLABEL2, "DUCKING");
+        sl(row2_mix_x, Y_SLABEL2, "MIX");
+        sl(row2_outeq_x, Y_SLABEL2, "OUT EQ");
+        sl(row2_duck_x, Y_SLABEL2, "DUCKING");
 
     }
     else {
+        g.setColour(AmbienceColors::Accent.withAlpha(0.75f));
         sl(PAD, Y_SLABEL1, "RT60 PER BAND");
 
         g.setColour(AmbienceColors::Separator.withAlpha(0.5f));
         g.drawHorizontalLine(Y_SLABEL2 - 4, (float)PAD, (float)(W - PAD));
 
-        // "SAT TYPE" は satTypeLabel コンポーネントが描画するため省略
-        // Tilt EQ ラベルのみ paint() で描画
+        // ProMode 2段目: SAT TYPE | TILT EQ | OUT EQ
+        const int tilt_x = PAD + KNOB_W + PAD + PAD + 8;
+        const int outeq_x = tilt_x + 3 * (KNOB_W + PAD) + 16;
+
+        g.setColour(AmbienceColors::Separator);
+        g.drawVerticalLine(outeq_x - 9, (float)Y_SLABEL2, (float)(Y_ROW2 + UNIT_H));
+
         g.setColour(AmbienceColors::Accent.withAlpha(0.75f));
-        const int tiltLabelX = PAD + KNOB_W + PAD + PAD + 8;
-        sl(tiltLabelX, Y_SLABEL2, "TILT EQ");
+        sl(tilt_x, Y_SLABEL2, "TILT EQ");
+        sl(outeq_x, Y_SLABEL2, "OUT EQ");
     }
 }

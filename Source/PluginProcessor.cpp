@@ -80,7 +80,12 @@ void FDNReverbAudioProcessor::updateEngineParams()
     p.rtBands[8] = *apvts.getRawParameterValue(ParamID::RTBand8);
     p.rtBands[9] = *apvts.getRawParameterValue(ParamID::RTBand9);
 
+    // ★ Phase 5: Output EQ
+    p.loCutHz = *apvts.getRawParameterValue(ParamID::LoCut);
+    p.hiCutHz = *apvts.getRawParameterValue(ParamID::HiCut);
+
     smoothWetGain.setTargetValue(juce::Decibels::decibelsToGain(p.wetDB));
+
     smoothDryGain.setTargetValue(juce::Decibels::decibelsToGain(p.dryDB));
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -22,54 +22,51 @@ private:
     FDNReverbAudioProcessor& audioProcessor;
     AmbienceLookAndFeel laf;
 
-    // ─── 共通 (常時表示) ────────────────────────────────────────────
+    // ─── 共通 ──
     AlgorithmSelector algoSelector;
     RT60Visualizer    rt60Viz;
     DecayCurveViz     decayCurveViz;
     VUMeter           vuIn, vuOut;
     juce::Label       titleLabel;
 
-    // AcousticMetrics 表示ラベル
     juce::Label labelMetricsTitle;
     juce::Label labelD50Caption, labelD50Value;
     juce::Label labelC50Caption, labelC50Value;
     juce::Label labelC80Caption, labelC80Value;
     juce::Label labelEDTCaption, labelEDTValue;
 
-    // ─── ProMode / ER SOLO ボタン (常時表示) ────────────────────────
-    //   配置: ヘッダー行 (タイトル右隣)
-    juce::TextButton proModeButton;   // "PRO" トグルボタン
-    juce::TextButton erSoloButton;    // "ER SOLO" トグルボタン (青系)
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
-        proModeAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
-        erSoloAttachment;
+    juce::TextButton proModeButton;
+    juce::TextButton erSoloButton;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> proModeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> erSoloAttachment;
 
-    // ProMode の状態キャッシュ（timerCallback で更新）
     bool isProMode{ false };
 
-    // ─── Normal Mode ノブ (ProMode 時は非表示) ──────────────────────
+    // ─── Normal Mode ノブ ──
     ArcKnob kPreDelay, kRoomSize, kDecay;
     ArcKnob kHFDamp, kLFAbsorb;
     ArcKnob kDiffusion, kModAmt, kModRate;
-    ArcKnob kStereoW, kCrossFeed;
+    ArcKnob kStereoW;
     ArcKnob kERLevel, kSaturation;
     ArcKnob kWet, kDry;
     ArcKnob kDuckAmt, kDuckThr, kDuckAtt, kDuckRel;
 
-    // ─── ProMode パネル (Normal Mode 時は非表示) ────────────────────
+    // ─── ★ Phase 5: Output EQ ノブ (Normal Mode 用) ──
+    ArcKnob kLoCutNorm;
+    ArcKnob kHiCutNorm;
 
-    // 1段目: RT60 帯域別ノブ × 10 (31Hz〜16kHz)
+    // ─── ProMode パネル ──
     std::array<ArcKnob, 10> kRTBands;
-
-    // 2段目: SatType コンボ + Tilt EQ ノブ × 3 (左寄せ)
-    juce::Label   satTypeLabel;
+    juce::Label    satTypeLabel;
     juce::ComboBox satTypeCombo;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
-        satTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> satTypeAttachment;
     ArcKnob kTiltLow, kTiltMid, kTiltHigh;
 
-    // ─── Layout 定数 ────────────────────────────────────────────────
+    // ─── ★ Phase 5: Output EQ ノブ (ProMode 用) ──
+    // Normal Mode 版と同じ APVTS パラメータに紐付くため値は同期する
+    ArcKnob kLoCutPro;
+    ArcKnob kHiCutPro;
+
     static constexpr int W = 900;
     static constexpr int H = 540;
     static constexpr int PAD = 8;
@@ -77,6 +74,7 @@ private:
     static constexpr int KNOB_H = 72;
     static constexpr int KNOB_LBL_H = 14;
     static constexpr int UNIT_H = 88;
+    static constexpr int ROW1_GAP = 18;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FDNReverbEditor)
 };

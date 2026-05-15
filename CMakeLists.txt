@@ -52,7 +52,7 @@ target_sources(Ambience PRIVATE
     Source/DSP/MagnitudeResponseFitter.cpp
     Source/DSP/UniversalEngine.h
     Source/DSP/UniversalEngine.cpp
- "Source/DSP/AcousticMetrics.h" "Source/DSP/AcousticMetrics.cpp" "Source/GUI/DecayCurveViz.h" "Source/GUI/DecayCurveViz.cpp" "Source/DSP/Saturator.h" "Source/DSP/OutputLimiter.h")
+ "Source/DSP/AcousticMetrics.h" "Source/DSP/AcousticMetrics.cpp" "Source/GUI/DecayCurveViz.h" "Source/GUI/DecayCurveViz.cpp" "Source/DSP/Saturator.h" "Source/DSP/OutputLimiter.h" "Source/DSP/OutputEQ.h")
 # ============================================================================
 # インクルードパス
 # ============================================================================

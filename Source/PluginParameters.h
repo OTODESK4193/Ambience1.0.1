@@ -5,9 +5,6 @@
 
 namespace FDNReverb {
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    //  ParamID
-    // ─────────────────────────────────────────────────────────────────────────────
     namespace ParamID {
         inline const juce::String Algorithm = "algorithm";
         inline const juce::String PreDelay = "predelay";
@@ -19,7 +16,6 @@ namespace FDNReverb {
         inline const juce::String ModAmount = "modamount";
         inline const juce::String ModRate = "modrate";
         inline const juce::String StereoWidth = "stereowidth";
-        // ★ CrossFeed 廃止 (v1.2)
         inline const juce::String ERLevel = "erlevel";
         inline const juce::String Saturation = "saturation";
         inline const juce::String SatType = "sattype";
@@ -44,11 +40,11 @@ namespace FDNReverb {
         inline const juce::String RTBand7 = "rtband7";
         inline const juce::String RTBand8 = "rtband8";
         inline const juce::String RTBand9 = "rtband9";
+        // ─── Phase 5 追加: Output EQ (Wet 出力段) ───
+        inline const juce::String LoCut = "locut";
+        inline const juce::String HiCut = "hicut";
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    //  DSPParams
-    // ─────────────────────────────────────────────────────────────────────────────
     struct DSPParams {
         int   algorithmIndex{ 0 };
         float decayScale{ 1.0f };
@@ -60,7 +56,6 @@ namespace FDNReverb {
         float modAmount{ 0.25f };
         float modRate{ 0.5f };
         float stereoWidth{ 0.80f };
-        // ★ crossFeed 廃止 (v1.2)
         float erLevel{ 0.6f };
         float lateLevel{ 1.0f };
         float wetDB{ -12.0f };
@@ -79,7 +74,10 @@ namespace FDNReverb {
         std::array<float, 10> rtBands{ { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
                                          1.0f, 1.0f, 1.0f, 1.0f, 1.0f } };
 
-        // ダーティフラグ比較用: 全フィールドが一致するか
+        // ─── Phase 5 追加 ───
+        float loCutHz{ 20.0f };
+        float hiCutHz{ 20000.0f };
+
         bool operator==(const DSPParams& o) const noexcept {
             return algorithmIndex == o.algorithmIndex
                 && decayScale == o.decayScale
@@ -106,7 +104,9 @@ namespace FDNReverb {
                 && tiltLow == o.tiltLow
                 && tiltMid == o.tiltMid
                 && tiltHigh == o.tiltHigh
-                && rtBands == o.rtBands;
+                && rtBands == o.rtBands
+                && loCutHz == o.loCutHz
+                && hiCutHz == o.hiCutHz;
         }
         bool operator!=(const DSPParams& o) const noexcept { return !(*this == o); }
     };

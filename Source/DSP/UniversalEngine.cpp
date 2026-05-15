@@ -92,6 +92,7 @@ namespace FDNReverb {
         currentERDelaySamples.fill(0.0f);
         currentERGains.fill(0.0f);
         outputLimiter.prepare(sampleRate);
+        outputEQ.prepare(sampleRate);       // ★ Phase 5
 
         duckingAttackCoeff = 1.0f - std::exp(-1.0f / (static_cast<float>(fs) * 0.010f));
         duckingReleaseCoeff = 1.0f - std::exp(-1.0f / (static_cast<float>(fs) * 0.200f));
@@ -115,6 +116,7 @@ namespace FDNReverb {
         saturatorL.reset();
         saturatorR.reset();
         outputLimiter.reset();
+        outputEQ.reset();                   // ★ Phase 5
         duckingEnvelope = 0.0f;
         for (auto& lfo : lfos) lfo.smoothed = 0.0f;
     }
@@ -134,6 +136,10 @@ namespace FDNReverb {
         const float relMs = juce::jmax(0.1f, p.duckingRelMs);
         duckingAttackCoeff = 1.0f - std::exp(-1.0f / (static_cast<float>(fs) * attMs * 0.001f));
         duckingReleaseCoeff = 1.0f - std::exp(-1.0f / (static_cast<float>(fs) * relMs * 0.001f));
+
+        // ★ Phase 5: Output EQ カットオフ反映
+        outputEQ.setLoCutHz(p.loCutHz);
+        outputEQ.setHiCutHz(p.hiCutHz);
 
         updateTopologyAndRouting();
     }
@@ -185,17 +191,47 @@ namespace FDNReverb {
                 scaledRT60[b] *= activeParams.rtBands[b];
         }
 
-        effectiveRT60 = scaledRT60;
-
 #if AMBIENCE_USE_STAGE2_ABSORPTION
+        // 設計と同時に targetDb を受け取り、effectiveRT60 を逆算する
+        std::array<float, NUM_BANDS> targetDbAccum;
+        targetDbAccum.fill(0.0f);
+
         for (int i = 0; i < FDN_ORDER; ++i) {
             auto s2 = MagnitudeResponseFitter::designStage2(
                 static_cast<int>(fdnBaseDelaySamples[i]), fs, scaledRT60,
                 activeParams.hfDamping, activeParams.lfAbsorption);
-            for (int b = 0; b < NUM_BANDS; ++b)
+            for (int b = 0; b < NUM_BANDS; ++b) {
                 currentAbsorptionCoeffsS2[i][b] = s2.geqStages[b];
+                // 16ch の targetDb を平均化（中央値より計算が単純で安定）
+                targetDbAccum[b] += s2.targetDb[b];
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────
+        //  ★ Phase 5: effectiveRT60 を LF/HF 補正反映済みの値に逆算
+        // ─────────────────────────────────────────────────────────────────────────
+        //   targetDb = -60 × m / (fs × T60)
+        //    → T60 = -60 × m / (fs × targetDb)
+        //
+        //   16ch の targetDb 平均と、代表遅延長（中間 ch 8 の遅延）で逆算する。
+        //   これによりグラフが LF Absorption / HF Damping の実際の効果を反映する。
+        // ─────────────────────────────────────────────────────────────────────────
+        const float representativeDelay = fdnBaseDelaySamples[FDN_ORDER / 2];
+        for (int b = 0; b < NUM_BANDS; ++b) {
+            const float avgTargetDb = targetDbAccum[b] / static_cast<float>(FDN_ORDER);
+            if (avgTargetDb < -0.001f) {
+                effectiveRT60[b] = -60.0f * representativeDelay
+                    / (static_cast<float>(fs) * avgTargetDb);
+            }
+            else {
+                // targetDb が 0 に近い場合は理論上 T60 が無限大なので scaledRT60 を保持
+                effectiveRT60[b] = scaledRT60[b];
+            }
+            // 異常値を抑制（実装上の安全策）
+            effectiveRT60[b] = juce::jlimit(0.05f, 30.0f, effectiveRT60[b]);
         }
 #else
+        effectiveRT60 = scaledRT60;
         for (int i = 0; i < FDN_ORDER; ++i) {
             auto absoStages = FilterDesign::designAbsorption(
                 static_cast<int>(fdnBaseDelaySamples[i]), fs, scaledRT60,
@@ -204,9 +240,8 @@ namespace FDNReverb {
         }
 #endif
 
-        float rt60Mid = std::max(0.1f, scaledRT60[4]);
+        float rt60Mid = std::max(0.1f, effectiveRT60[4]);  // ★ effectiveRT60 で AGC 計算
 
-        // ★ baseDB を 28.7 → 20.0 に変更 (Wet 飽和抑制)
         constexpr float baseDB = 20.0f;
         float decayCompDB = 7.0f * std::log10(rt60Mid);
 
@@ -215,17 +250,34 @@ namespace FDNReverb {
         };
         float algoOffset = algorithmOffsetDB[juce::jlimit(0, 6, activeParams.algorithmIndex)];
 
+        // ─────────────────────────────────────────────────────────────────────────
+        //  ★ Phase 5: トポロジー結線 + Diffusion 全アルゴリズム適用
+        // ─────────────────────────────────────────────────────────────────────────
+        //   bypassInputDiffusers を全て false に変更。
+        //   アルゴリズムごとに diffusionSensitivity を設定し、
+        //   キャラクタを保ちながら Diffusion ノブの効果を全アルゴリズムに反映する。
+        // ─────────────────────────────────────────────────────────────────────────
         switch (currentTopology) {
         case ReverbTopology::Room:
-            bypassER = false; bypassInputDiffusers = true;  apfGain = 0.3f;   break;
+            bypassER = false; bypassInputDiffusers = false;
+            apfGain = 0.3f;   diffusionSensitivity = 1.0f;
+            break;
         case ReverbTopology::Hall:
-            bypassER = false; bypassInputDiffusers = false; apfGain = 0.618f; break;
+            bypassER = false; bypassInputDiffusers = false;
+            apfGain = 0.618f; diffusionSensitivity = 1.0f;
+            break;
         case ReverbTopology::Plate:
-            bypassER = true;  bypassInputDiffusers = false; apfGain = 0.7f;   break;
+            bypassER = true;  bypassInputDiffusers = false;
+            apfGain = 0.7f;   diffusionSensitivity = 0.7f;
+            break;
         case ReverbTopology::Spring:
-            bypassER = true;  bypassInputDiffusers = false; apfGain = 0.5f;   break;
+            bypassER = true;  bypassInputDiffusers = false;
+            apfGain = 0.5f;   diffusionSensitivity = 0.5f;
+            break;
         case ReverbTopology::Goldfoil:
-            bypassER = true;  bypassInputDiffusers = false; apfGain = 0.75f;  break;
+            bypassER = true;  bypassInputDiffusers = false;
+            apfGain = 0.75f;  diffusionSensitivity = 0.8f;
+            break;
         }
 
         const auto& erPattern = PRESET_ER_PATTERNS[
@@ -296,7 +348,6 @@ namespace FDNReverb {
         float* outL, float* outR,
         int numSamples) noexcept
     {
-        // ── ブロック単位の事前計算 ──
         const float depthSamples = activeParams.modAmount * 0.002f * static_cast<float>(fs);
         const float wetGain = juce::Decibels::decibelsToGain(activeParams.wetDB);
         const float stereoWidth = activeParams.stereoWidth;
@@ -306,18 +357,20 @@ namespace FDNReverb {
         const float duckThreshLin = juce::Decibels::decibelsToGain(activeParams.duckingThreshDB);
         const float duckAmountDB = activeParams.duckingAmount;
 
-        // ★ Diffusion のプロ水準実装 (v1.2)
-        // InputDiffuser gain: diffusion 0→1 で 0.25→0.80 に変化
-        //   - 低値: 拡散が弱く反射のコーム感が目立つ（小さな部屋らしさ）
-        //   - 高値: 反射が素早く均質化（大きなホールの包まれ感）
-        const float diffuserGain = 0.25f + activeParams.diffusion * 0.55f;
+        // ─────────────────────────────────────────────────────────────────────────
+        //  ★ Phase 5: Diffusion をプロ水準 + アルゴリズム別感度
+        // ─────────────────────────────────────────────────────────────────────────
+        //   effectiveDiffusion = diffusion × diffusionSensitivity
+        //     - Room/Hall: 感度 1.0 (フル効果)
+        //     - Plate:     感度 0.7 (金属感を保持)
+        //     - Spring:    感度 0.5 (バネのキャラクタを守る)
+        //     - Goldfoil:  感度 0.8 (バランス)
+        // ─────────────────────────────────────────────────────────────────────────
+        const float effectiveDiffusion = activeParams.diffusion * diffusionSensitivity;
+        const float diffuserGain = 0.25f + effectiveDiffusion * 0.55f;
+        const float effectiveApfGain = apfGain * (0.60f + effectiveDiffusion * 0.40f);
 
-        // NestedAllpass gain: トポロジー基準値 × diffusion 係数
-        //   - diffusion=0 → 基準値の 60% (コムフィルタ効果が前面に出る)
-        //   - diffusion=1 → 基準値の 100% (完全な Allpass 拡散)
-        const float effectiveApfGain = apfGain * (0.60f + activeParams.diffusion * 0.40f);
-
-        // LFO 係数のブロック単位事前計算
+        // LFO 係数の事前計算
         std::array<float, FDN_ORDER> lfoCoeffs;
         {
             const float fsf = static_cast<float>(fs);
@@ -336,7 +389,7 @@ namespace FDNReverb {
             const float sideIn = (leftIn - rightIn) * 0.5f;
             float erOutL = 0.0f, erOutR = 0.0f;
 
-            // ── Ducking エンベロープ検出 ──
+            // Ducking
             const float inputPeak = juce::jmax(std::abs(leftIn), std::abs(rightIn));
             const float envCoeff = (inputPeak > duckingEnvelope)
                 ? duckingAttackCoeff : duckingReleaseCoeff;
@@ -350,15 +403,15 @@ namespace FDNReverb {
                 duckGainLinear = juce::Decibels::decibelsToGain(gainRedDB);
             }
 
-            // ── 1. Input Diffusers (diffuserGain で Diffusion ノブ反映) ──
+            // ── 1. Input Diffusers (全アルゴリズム有効) ──
             float fdnInputMid = midIn;
             if (!bypassInputDiffusers) {
                 for (int i = 0; i < 4; ++i) {
                     float delaySmp = (3.0f + i * 2.0f) * 0.001f * static_cast<float>(fs);
                     float d = inputDiffusers[i].read(delaySmp);
-                    float w = fdnInputMid + diffuserGain * d;   // ★ 0.618f → diffuserGain
+                    float w = fdnInputMid + diffuserGain * d;
                     inputDiffusers[i].write(w);
-                    fdnInputMid = d - diffuserGain * w;          // ★ 0.618f → diffuserGain
+                    fdnInputMid = d - diffuserGain * w;
                 }
             }
 
@@ -382,7 +435,7 @@ namespace FDNReverb {
                 erOutR = erTotalR;
             }
 
-            // ── 3. FDN + Nested Allpass (16ch) ──
+            // ── 3. FDN + Nested Allpass ──
             std::array<float, 16> currentFb = fbVec;
             fastWalshHadamardTransform(currentFb);
             applySignFlipping(currentFb);
@@ -404,12 +457,11 @@ namespace FDNReverb {
 
                 d = processMicroSaturation(d);
 
-                // ★ NestedAllpass: effectiveApfGain で Diffusion ノブ反映
                 const float apfDelaySmp = (1.5f + i * 0.3f) * 0.001f * static_cast<float>(fs);
                 float apfD = nestedAllpassDelays[i].read(apfDelaySmp);
-                float apfW = d + effectiveApfGain * apfD;        // ★ apfGain → effectiveApfGain
+                float apfW = d + effectiveApfGain * apfD;
                 nestedAllpassDelays[i].write(apfW);
-                float apfOut = apfD - effectiveApfGain * apfW;   // ★ apfGain → effectiveApfGain
+                float apfOut = apfD - effectiveApfGain * apfW;
 
                 nextFb[i] = apfOut;
 
@@ -431,9 +483,6 @@ namespace FDNReverb {
             fdnOutR *= 0.125f;
             fbVec = nextFb;
 
-            // ★ CrossFeed 処理を完全削除 (v1.2)
-
-            // ── 4. ミックス ──
             const float erMixL = bypassER ? 0.0f : erOutL * erLevel;
             const float erMixR = bypassER ? 0.0f : erOutR * erLevel;
             const float lateMixL = fdnOutL * lateMakeupGainLinear * lateLevel;
@@ -447,10 +496,20 @@ namespace FDNReverb {
 
             if (erSolo) { satL = 0.0f; satR = 0.0f; }
 
-            // ── 6. 最終出力 ──
+            // ─────────────────────────────────────────────────────────────────
+            //  ★ Phase 5: Output EQ (Wet のみ、Dry はバイパス)
+            // ─────────────────────────────────────────────────────────────────
+            //   信号フロー: Saturation → [Lo Cut → Hi Cut] → Wet 出力
+            //   ER 成分も含めて Wet 全体に適用 (ER は Wet の一部であるため自然)。
+            //   Dry 経路（PluginProcessor 側）には一切影響しない。
+            // ─────────────────────────────────────────────────────────────────
+            float wetL = erMixL + satL;
+            float wetR = erMixR + satR;
+            outputEQ.process(wetL, wetR);
+
             const float finalWetGain = wetGain * duckGainLinear;
-            outL[n] = (erMixL + satL) * finalWetGain;
-            outR[n] = (erMixR + satR) * finalWetGain;
+            outL[n] = wetL * finalWetGain;
+            outR[n] = wetR * finalWetGain;
 
             outputLimiter.process(outL[n], outR[n]);
         }
