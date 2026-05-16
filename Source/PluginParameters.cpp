@@ -48,7 +48,7 @@ namespace FDNReverb {
         //   内部オフセット -3dB (PluginProcessor.cpp) により
         //   実効 Wet は表示値 -3dB 分低くなる。
         //   Wet=-6dB 表示 → 実効 -9dB、 Wet=0dB 表示 → 実効 -3dB
-        addFloat(ParamID::WetLevel, "Wet", -60.0f, 0.0f, -6.0f, 1.0f, "dB");
+        addFloat(ParamID::WetLevel, "Wet", -60.0f, 0.0f, -4.0f, 1.0f, "dB");
         addFloat(ParamID::DryLevel, "Dry", -60.0f, 0.0f, 0.0f, 1.0f, "dB");
 
         addFloat(ParamID::DuckAmount, "Ducking", 0.0f, 20.0f, 0.0f, 1.0f, "dB");

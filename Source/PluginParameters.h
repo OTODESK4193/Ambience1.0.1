@@ -57,8 +57,8 @@ namespace FDNReverb {
         float stereoWidth{ 0.80f };
         float erLevel{ 0.6f };
         float lateLevel{ 1.0f };
-        // ★ Step B: デフォルト Wet -6dB / Dry 0dB
-        float wetDB{ -6.0f };
+        // ★ Step B: デフォルト Wet -4dB / Dry 0dB
+        float wetDB{ -4.0f };
         float dryDB{ 0.0f };
         float saturation{ 0.0f };
         int   satTypeIdx{ 0 };

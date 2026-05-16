@@ -12,7 +12,7 @@ using namespace FDNReverb;
 //   実装: APVTS から取った値に -3dB を加算 (= 0.708 倍) するのではなく、
 //         Decibels::decibelsToGain 後に乗算する形が数値的に安全。
 // ─────────────────────────────────────────────────────────────────────────────
-static constexpr float kWetInternalOffsetDB = -3.0f;
+static constexpr float kWetInternalOffsetDB = -1.0f;
 
 FDNReverbAudioProcessor::FDNReverbAudioProcessor()
     : AudioProcessor(BusesProperties()
