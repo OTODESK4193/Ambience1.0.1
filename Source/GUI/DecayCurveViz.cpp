@@ -3,7 +3,7 @@
 DecayCurveViz::DecayCurveViz() {
     cachedERDelayMs.fill(0.0f);
     cachedERGains.fill(0.0f);
-    startTimerHz(15);  // 15Hz で更新（軽め）
+    startTimerHz(15);
 }
 
 DecayCurveViz::~DecayCurveViz() {
@@ -12,18 +12,15 @@ DecayCurveViz::~DecayCurveViz() {
 
 void DecayCurveViz::timerCallback() {
     if (processor == nullptr) return;
-
     const auto& engine = processor->getEngine();
 
-    // RT60 中域値を取得
     auto rt60 = engine.getEffectiveRT60();
-    cachedRT60Mid = std::max(0.1f, rt60[4]);  // 500Hz バンド
+    cachedRT60Mid = std::max(0.1f, rt60[4]);
 
-    // ER タップ情報を取得
     cachedERBypassed = engine.isERBypassed();
     cachedERTapCount = engine.getERTapCount();
-
-    if (cachedERTapCount > MAX_DISPLAY_TAPS) cachedERTapCount = MAX_DISPLAY_TAPS;
+    if (cachedERTapCount > MAX_DISPLAY_TAPS)
+        cachedERTapCount = MAX_DISPLAY_TAPS;
 
     double sr = engine.getSampleRate();
     if (sr < 1.0) sr = 48000.0;
@@ -33,228 +30,295 @@ void DecayCurveViz::timerCallback() {
         cachedERDelayMs[i] = delaySamples / static_cast<float>(sr) * 1000.0f;
         cachedERGains[i] = engine.getERTapGain(i);
     }
-
     repaint();
 }
 
-void DecayCurveViz::resized() {
-    // 何もしない（paint で動的にサイズを取得）
-}
+void DecayCurveViz::resized() {}
 
-void DecayCurveViz::paint(juce::Graphics& g) {
+void DecayCurveViz::paint(juce::Graphics& g)
+{
     auto bounds = getLocalBounds().toFloat();
     if (bounds.getWidth() < 10.0f || bounds.getHeight() < 10.0f) return;
 
-    // 背景クリア
     g.fillAll(AmbienceColors::Background);
 
-    // ── 描画パラメータ ──
     const float topMargin = 10.0f;
     const float bottomMargin = 18.0f;
     const float leftMargin = 30.0f;
     const float rightMargin = 8.0f;
-
     const float plotX = bounds.getX() + leftMargin;
     const float plotY = bounds.getY() + topMargin;
     const float plotW = bounds.getWidth() - leftMargin - rightMargin;
     const float plotH = bounds.getHeight() - topMargin - bottomMargin;
 
-    // 時間軸の最大値（RT60 × 1.5、最低 0.5秒、最高 8秒）
     const float maxTimeSec = juce::jlimit(0.5f, 8.0f, cachedRT60Mid * 1.5f);
-
-    // dB 範囲 (0 ~ -60 dB)
     const float minDB = -60.0f;
     const float maxDB = 0.0f;
 
-    // 座標変換ヘルパー
-    auto timeToX = [&](float timeSec) {
-        return plotX + (timeSec / maxTimeSec) * plotW;
+    // ─────────────────────────────────────────────────────────────────────────
+    //  スプリット時間軸
+    //   0〜splitSec   → 全幅の splitRatio 割合に拡大 (ER ゾーン)
+    //   splitSec〜max → 残りの幅 (Late ゾーン)
+    // ─────────────────────────────────────────────────────────────────────────
+    constexpr float splitSec = 0.20f;  // 200ms まで拡大
+    constexpr float splitRatio = 0.30f;  // 全幅の 30% を ER ゾーンに割り当て
+
+    auto timeToX = [&](float timeSec) -> float {
+        if (timeSec <= splitSec) {
+            const float ratio = timeSec / splitSec;
+            return plotX + ratio * plotW * splitRatio;
+        }
+        else {
+            const float lateRange = maxTimeSec - splitSec;
+            if (lateRange <= 0.0f) return plotX + plotW;
+            const float ratio = (timeSec - splitSec) / lateRange;
+            return plotX + plotW * splitRatio + ratio * plotW * (1.0f - splitRatio);
+        }
         };
-    auto dbToY = [&](float db) {
-        float normalized = (db - minDB) / (maxDB - minDB);  // 0 ~ 1
+
+    auto dbToY = [&](float db) -> float {
+        const float normalized = (db - minDB) / (maxDB - minDB);
         return plotY + (1.0f - normalized) * plotH;
         };
 
-    // ── グリッド描画 ──
-    g.setColour(AmbienceColors::Separator.withAlpha(0.3f));
-
-    // 水平線 (dB)
-    for (float db = 0.0f; db >= -60.0f; db -= 20.0f) {
-        float y = dbToY(db);
-        g.drawHorizontalLine((int)y, plotX, plotX + plotW);
+    // ─── ER ゾーン背景 ───
+    {
+        const float erZoneW = plotW * splitRatio;
+        g.setColour(juce::Colour(0xFF1A2535));
+        g.fillRect(plotX, plotY, erZoneW, plotH);
     }
 
-    // 垂直線 (時間) - 動的に間隔を決定
+    // ─── グリッド: 水平線 (dB) ───
+    g.setColour(AmbienceColors::Separator.withAlpha(0.3f));
+    for (float db = 0.0f; db >= -60.0f; db -= 20.0f)
+        g.drawHorizontalLine((int)dbToY(db), plotX, plotX + plotW);
+
+    // ─── グリッド: ER ゾーン垂直線 (ms) ───
+    {
+        static const float erGridMs[] = { 20.0f, 50.0f, 100.0f, 150.0f, 200.0f };
+        g.setColour(AmbienceColors::Separator.withAlpha(0.5f));
+        for (float ms : erGridMs) {
+            const float t = ms * 0.001f;
+            if (t >= maxTimeSec) break;
+            g.drawVerticalLine((int)timeToX(t), plotY, plotY + plotH);
+        }
+    }
+
+    // ─── グリッド: Late ゾーン垂直線 (s) ───
     float timeStep;
-    if (maxTimeSec <= 1.0f)      timeStep = 0.2f;
-    else if (maxTimeSec <= 2.0f) timeStep = 0.5f;
+    if (maxTimeSec <= 2.0f) timeStep = 0.5f;
     else if (maxTimeSec <= 4.0f) timeStep = 1.0f;
     else                         timeStep = 2.0f;
 
-    for (float t = 0.0f; t <= maxTimeSec; t += timeStep) {
-        float x = timeToX(t);
-        g.drawVerticalLine((int)x, plotY, plotY + plotH);
+    g.setColour(AmbienceColors::Separator.withAlpha(0.3f));
+    for (float t = splitSec + timeStep; t <= maxTimeSec; t += timeStep)
+        g.drawVerticalLine((int)timeToX(t), plotY, plotY + plotH);
+
+    // ─── スプリット境界線 ───
+    {
+        const float splitX = timeToX(splitSec);
+        g.setColour(AmbienceColors::Separator.withAlpha(0.9f));
+        g.drawVerticalLine((int)splitX, plotY, plotY + plotH);
     }
 
-    // ── 軸ラベル ──
-    g.setColour(AmbienceColors::TextSecondary.withAlpha(0.6f));
+    // ─── 軸ラベル ───
     g.setFont(juce::Font(juce::FontOptions(8.5f)));
+    g.setColour(AmbienceColors::TextSecondary.withAlpha(0.6f));
 
-    // dB ラベル (左)
     for (float db = 0.0f; db >= -60.0f; db -= 20.0f) {
-        float y = dbToY(db);
+        const float y = dbToY(db);
         g.drawText(juce::String((int)db) + "dB",
-            (int)(plotX - leftMargin + 2),
-            (int)(y - 6),
+            (int)(plotX - leftMargin + 2), (int)(y - 6),
             (int)(leftMargin - 4), 12,
             juce::Justification::centredRight);
     }
 
-    // 時間ラベル (下)
-    for (float t = 0.0f; t <= maxTimeSec; t += timeStep) {
-        float x = timeToX(t);
-        juce::String label;
-        if (t < 1.0f) label = juce::String((int)(t * 1000)) + "ms";
-        else          label = juce::String(t, 1) + "s";
-        g.drawText(label,
-            (int)(x - 25),
-            (int)(plotY + plotH + 2),
-            50, 14,
-            juce::Justification::centred);
+    // ER ゾーン時間ラベル (ms)
+    {
+        static const float erGridMs[] = { 20.0f, 50.0f, 100.0f, 150.0f, 200.0f };
+        for (float ms : erGridMs) {
+            const float t = ms * 0.001f;
+            if (t >= maxTimeSec) break;
+            const float x = timeToX(t);
+            g.drawText(juce::String((int)ms) + "ms",
+                (int)(x - 20), (int)(plotY + plotH + 2),
+                40, 14, juce::Justification::centred);
+        }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    //  Late Reverb 減衰カーブの描画 (オレンジ系、2Dグラデーション)
-    // ─────────────────────────────────────────────────────────────
+    // Late ゾーン時間ラベル (s)
+    for (float t = splitSec + timeStep; t <= maxTimeSec; t += timeStep) {
+        const float x = timeToX(t);
+        g.drawText(juce::String(t, 1) + "s",
+            (int)(x - 20), (int)(plotY + plotH + 2),
+            40, 14, juce::Justification::centred);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Late Reverb 減衰カーブ (オレンジ系 2D グラデーション)
+    // ─────────────────────────────────────────────────────────────────────────
     {
-        // 指数減衰: y(t) = -60 × t / RT60 (dB)
+        const int numPoints = 80;
+        juce::Colour orangeColor = AmbienceColors::Accent;
+
         juce::Path latePath;
-        latePath.startNewSubPath(plotX, dbToY(maxDB));  // 左上から
-
-        const int numPoints = 64;
+        latePath.startNewSubPath(plotX, dbToY(maxDB));
         for (int i = 0; i <= numPoints; ++i) {
-            float t = (i / static_cast<float>(numPoints)) * maxTimeSec;
-            float db = -60.0f * t / cachedRT60Mid;
-            db = std::max(minDB, db);
-
-            float x = timeToX(t);
-            float y = dbToY(db);
-            latePath.lineTo(x, y);
+            const float t = (i / static_cast<float>(numPoints)) * maxTimeSec;
+            const float db = std::max(minDB, -60.0f * t / cachedRT60Mid);
+            latePath.lineTo(timeToX(t), dbToY(db));
         }
-        // 下端を閉じる
         latePath.lineTo(timeToX(maxTimeSec), dbToY(minDB));
         latePath.lineTo(plotX, dbToY(minDB));
         latePath.closeSubPath();
 
-        // 2D グラデーション (左上=濃い → 右下=透明)
-        juce::Colour orangeColor = AmbienceColors::Accent;
         juce::ColourGradient lateGrad(
-            orangeColor.withAlpha(0.65f),
-            plotX, plotY,                          // 左上: 濃い
-            orangeColor.withAlpha(0.0f),
-            plotX + plotW, plotY + plotH,          // 右下: 透明
-            false
-        );
-
+            orangeColor.withAlpha(0.55f), plotX, plotY,
+            orangeColor.withAlpha(0.0f), plotX + plotW, plotY + plotH,
+            false);
         g.setGradientFill(lateGrad);
         g.fillPath(latePath);
 
-        // カーブの輪郭線（強調）
         juce::Path lateOutline;
         lateOutline.startNewSubPath(plotX, dbToY(maxDB));
         for (int i = 0; i <= numPoints; ++i) {
-            float t = (i / static_cast<float>(numPoints)) * maxTimeSec;
-            float db = -60.0f * t / cachedRT60Mid;
-            db = std::max(minDB, db);
+            const float t = (i / static_cast<float>(numPoints)) * maxTimeSec;
+            const float db = std::max(minDB, -60.0f * t / cachedRT60Mid);
             lateOutline.lineTo(timeToX(t), dbToY(db));
         }
-        g.setColour(orangeColor.withAlpha(0.7f));
-        g.strokePath(lateOutline, juce::PathStrokeType(1.5f));
+        g.setColour(orangeColor.withAlpha(0.75f));
+        g.strokePath(lateOutline, juce::PathStrokeType(1.5f,
+            juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
-    // ─────────────────────────────────────────────────────────────
-    //  ER タップの描画 (青系、2Dグラデーション)
-    // ─────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    //  ER タップ描画 (★ 改善版)
+    //    旧: 細い縦線 2px + 丸マーカー
+    //    新: 幅広矩形 5px + ダイヤマーカー + エンベロープ塗りつぶし
+    // ─────────────────────────────────────────────────────────────────────────
     if (!cachedERBypassed && cachedERTapCount > 0) {
-        // 青色（業界標準: 鮮やかな青）
-        juce::Colour blueColor = juce::Colour::fromRGB(80, 160, 230);
+        const juce::Colour blueColor = juce::Colour::fromRGB(80, 160, 230);
 
-        // 各タップを縦の塗りつぶし矩形として描画
-        for (int t = 0; t < cachedERTapCount; ++t) {
-            float delayMs = cachedERDelayMs[t];
-            float gain = cachedERGains[t];
-
-            float timeSec = delayMs * 0.001f;
-            if (timeSec > maxTimeSec) continue;  // 範囲外
-
-            // ゲインを dB に変換
-            float gainDB = (gain > 1e-6f) ? juce::Decibels::gainToDecibels(gain) : minDB;
-            gainDB = juce::jlimit(minDB, maxDB, gainDB);
-
-            float x = timeToX(timeSec);
-            float yTop = dbToY(gainDB);
-            float yBottom = dbToY(minDB);
-
-            // タップの幅 (細い縦線、両側に薄い裾野)
-            float lineW = 2.0f;
-
-            // 縦方向グラデーション
-            juce::ColourGradient tapGrad(
-                blueColor.withAlpha(0.85f),
-                x, yTop,                           // 上端: 濃い
-                blueColor.withAlpha(0.0f),
-                x, yBottom,                        // 下端: 透明
-                false
-            );
-
-            g.setGradientFill(tapGrad);
-            g.fillRect(x - lineW * 0.5f, yTop, lineW, yBottom - yTop);
-
-            // タップ位置にマーカー
-            g.setColour(blueColor.withAlpha(0.95f));
-            g.fillEllipse(x - 2.0f, yTop - 2.0f, 4.0f, 4.0f);
-        }
-
-        // ER 全体を薄くつなぐエンベロープ（任意の演出）
-        // 各タップのピーク位置を結ぶライン
+        // ── ER エンベロープ塗りつぶし領域 ──
         if (cachedERTapCount >= 2) {
-            juce::Path erEnvelope;
+            juce::Path erFill;
             bool started = false;
+            float lastX = plotX;
 
             for (int t = 0; t < cachedERTapCount; ++t) {
-                float delayMs = cachedERDelayMs[t];
-                float gain = cachedERGains[t];
-                float timeSec = delayMs * 0.001f;
+                const float timeSec = cachedERDelayMs[t] * 0.001f;
                 if (timeSec > maxTimeSec) continue;
 
-                float gainDB = (gain > 1e-6f) ? juce::Decibels::gainToDecibels(gain) : minDB;
+                float gainDB = (cachedERGains[t] > 1e-6f)
+                    ? juce::Decibels::gainToDecibels(cachedERGains[t]) : minDB;
                 gainDB = juce::jlimit(minDB, maxDB, gainDB);
 
-                float x = timeToX(timeSec);
-                float y = dbToY(gainDB);
+                const float x = timeToX(timeSec);
+                const float y = dbToY(gainDB);
 
                 if (!started) {
-                    erEnvelope.startNewSubPath(x, y);
+                    erFill.startNewSubPath(plotX, dbToY(minDB));
+                    erFill.lineTo(x, y);
                     started = true;
                 }
                 else {
-                    erEnvelope.lineTo(x, y);
+                    erFill.lineTo(x, y);
                 }
+                lastX = x;
             }
 
-            g.setColour(blueColor.withAlpha(0.4f));
-            g.strokePath(erEnvelope, juce::PathStrokeType(1.0f));
+            if (started) {
+                erFill.lineTo(lastX, dbToY(minDB));
+                erFill.closeSubPath();
+
+                juce::ColourGradient erAreaGrad(
+                    blueColor.withAlpha(0.20f), plotX, plotY,
+                    blueColor.withAlpha(0.03f), plotX + plotW * splitRatio, plotY + plotH,
+                    false);
+                g.setGradientFill(erAreaGrad);
+                g.fillPath(erFill);
+            }
+        }
+
+        // ── 各タップ: 幅広矩形 + ダイヤマーカー ──
+        for (int t = 0; t < cachedERTapCount; ++t) {
+            const float timeSec = cachedERDelayMs[t] * 0.001f;
+            if (timeSec > maxTimeSec) continue;
+
+            float gainDB = (cachedERGains[t] > 1e-6f)
+                ? juce::Decibels::gainToDecibels(cachedERGains[t]) : minDB;
+            gainDB = juce::jlimit(minDB, maxDB, gainDB);
+
+            const float x = timeToX(timeSec);
+            const float yTop = dbToY(gainDB);
+            const float yBottom = dbToY(minDB);
+            const float barW = 5.0f;
+
+            juce::ColourGradient tapGrad(
+                blueColor.withAlpha(0.90f), x, yTop,
+                blueColor.withAlpha(0.10f), x, yBottom,
+                false);
+            g.setGradientFill(tapGrad);
+            g.fillRect(x - barW * 0.5f, yTop, barW, yBottom - yTop);
+
+            // ダイヤ形マーカー
+            g.setColour(blueColor);
+            juce::Path diamond;
+            diamond.startNewSubPath(x, yTop - 5.0f);
+            diamond.lineTo(x + 4.0f, yTop);
+            diamond.lineTo(x, yTop + 3.0f);
+            diamond.lineTo(x - 4.0f, yTop);
+            diamond.closeSubPath();
+            g.fillPath(diamond);
+        }
+
+        // ── ER エンベロープ輪郭線 ──
+        if (cachedERTapCount >= 2) {
+            juce::Path erOutline;
+            bool started = false;
+
+            for (int t = 0; t < cachedERTapCount; ++t) {
+                const float timeSec = cachedERDelayMs[t] * 0.001f;
+                if (timeSec > maxTimeSec) continue;
+
+                float gainDB = (cachedERGains[t] > 1e-6f)
+                    ? juce::Decibels::gainToDecibels(cachedERGains[t]) : minDB;
+                gainDB = juce::jlimit(minDB, maxDB, gainDB);
+
+                const float x = timeToX(timeSec);
+                const float y = dbToY(gainDB);
+
+                if (!started) { erOutline.startNewSubPath(x, y); started = true; }
+                else            erOutline.lineTo(x, y);
+            }
+
+            g.setColour(blueColor.withAlpha(0.65f));
+            g.strokePath(erOutline, juce::PathStrokeType(1.5f,
+                juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         }
     }
 
+    // ─── ゾーンラベル ───
+    g.setFont(juce::Font(juce::FontOptions(
+        "Helvetica Neue", 8.0f, juce::Font::bold)));
 
+    g.setColour(juce::Colour::fromRGB(80, 160, 230).withAlpha(0.9f));
+    g.drawText("ER",
+        (int)(plotX + 4), (int)(plotY + 2),
+        30, 12, juce::Justification::centredLeft);
 
-    // ── 凡例 (左上、小さく) ──
-    g.setFont(juce::Font(juce::FontOptions("Helvetica Neue", 8.0f, juce::Font::bold)));
+    {
+        const float splitX = timeToX(splitSec);
+        g.setColour(AmbienceColors::Accent.withAlpha(0.9f));
+        g.drawText("LATE",
+            (int)(splitX + 6), (int)(plotY + 2),
+            40, 12, juce::Justification::centredLeft);
+    }
 
-    g.setColour(juce::Colour::fromRGB(80, 160, 230));
-    g.drawText("ER", (int)(plotX + 4), (int)(plotY + 2), 30, 12, juce::Justification::centredLeft);
-
-    g.setColour(AmbienceColors::Accent);
-    g.drawText("LATE", (int)(plotX + 30), (int)(plotY + 2), 40, 12, juce::Justification::centredLeft);
+    g.setFont(juce::Font(juce::FontOptions(7.5f)));
+    g.setColour(AmbienceColors::TextSecondary.withAlpha(0.4f));
+    g.drawText("0-200ms (x2)",
+        (int)(plotX + 2), (int)(plotY + plotH - 14),
+        (int)(plotW * splitRatio - 4), 12,
+        juce::Justification::centredLeft);
 }

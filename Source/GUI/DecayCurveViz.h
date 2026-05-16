@@ -3,45 +3,40 @@
 #include "../PluginProcessor.h"
 #include "AmbienceUI.h"
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  DecayCurveViz
-// ─────────────────────────────────────────────────────────────────────────────
-//  時間軸での減衰曲線を可視化するコンポーネント。
-//  
-//  表示要素:
-//    - 背景グリッド (時間軸: 0ms ~ RT60×1.5、振幅軸: 0dB ~ -60dB)
-//    - ER タップ: 青系の縦線、グラデーション付き塗りつぶし
-//    - Late Reverb 減衰: オレンジ系の指数曲線、2Dグラデーション塗りつぶし
-//
-//  色の設計:
-//    - ER:   青系  (上=濃い → 下=透明、左=濃い → 右=薄い)
-//    - Late: オレンジ系 (同上)
-//
-//  時間軸:
-//    - 自動スケーリング: 現在の RT60 中域値 × 1.5倍まで表示
-// ─────────────────────────────────────────────────────────────────────────────
 class DecayCurveViz : public juce::Component, private juce::Timer {
 public:
     DecayCurveViz();
     ~DecayCurveViz() override;
 
     void setProcessor(FDNReverbAudioProcessor* p) noexcept { processor = p; }
-
     void paint(juce::Graphics& g) override;
     void resized() override;
 
 private:
     void timerCallback() override;
 
+    // ─── 時間軸変換ヘルパー ───────────────────────────────────────────────
+    //   スプリット時間軸:
+    //     0〜splitSec  : plotW × splitRatio の幅に拡大表示
+    //     splitSec〜max: 残りの幅に表示
+    //   これにより ER（0〜200ms）が 2 倍の解像度で見える
+    float timeToX(float timeSec, float plotX, float plotW,
+        float maxTimeSec) const noexcept;
+
     FDNReverbAudioProcessor* processor{ nullptr };
 
-    // 描画用のキャッシュ値（タイマーで定期更新）
     float cachedRT60Mid{ 1.0f };
-    int cachedERTapCount{ 0 };
+    int   cachedERTapCount{ 0 };
+    bool  cachedERBypassed{ false };
+
     static constexpr int MAX_DISPLAY_TAPS = 12;
     std::array<float, MAX_DISPLAY_TAPS> cachedERDelayMs;
     std::array<float, MAX_DISPLAY_TAPS> cachedERGains;
-    bool cachedERBypassed{ false };
+
+    // ─── スプリット時間軸の設定 ───
+    // splitSec 以下の時間を splitRatio の割合の幅に拡大表示する
+    static constexpr float splitSec = 0.20f;  // 0〜200ms を拡大
+    static constexpr float splitRatio = 0.30f;  // 全幅の 30% を ER ゾーンに割り当て
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DecayCurveViz)
 };
