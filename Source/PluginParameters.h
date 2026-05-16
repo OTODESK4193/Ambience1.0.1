@@ -48,7 +48,6 @@ namespace FDNReverb {
         int   algorithmIndex{ 0 };
         float decayScale{ 1.0f };
         float roomSizeScale{ 1.0f };
-        // ★ Step A: デフォルト 0.5 → 0.0 (RT60 グラフでオレンジと灰色を一致させる)
         float hfDamping{ 0.0f };
         float lfAbsorption{ 0.0f };
         float diffusion{ 0.70f };
@@ -58,9 +57,9 @@ namespace FDNReverb {
         float stereoWidth{ 0.80f };
         float erLevel{ 0.6f };
         float lateLevel{ 1.0f };
-        // ★ Step A: 表示は -60〜0dB に統一、デフォルト -12dB
-        float wetDB{ -12.0f };
-        float dryDB{ -12.0f };
+        // ★ Step B: デフォルト Wet -6dB / Dry 0dB
+        float wetDB{ -6.0f };
+        float dryDB{ 0.0f };
         float saturation{ 0.0f };
         int   satTypeIdx{ 0 };
         float duckingAmount{ 0.0f };

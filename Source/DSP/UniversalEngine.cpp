@@ -175,20 +175,30 @@ namespace FDNReverb {
         std::array<float, NUM_BANDS> scaledRT60 = preset.acoustics.rt60;
         for (auto& v : scaledRT60) v *= activeParams.decayScale;
 
-        if (activeParams.proMode) {
-            scaledRT60[0] *= activeParams.tiltLow;
-            scaledRT60[1] *= activeParams.tiltLow;
-            scaledRT60[2] *= activeParams.tiltLow;
-            scaledRT60[3] *= activeParams.tiltMid;
-            scaledRT60[4] *= activeParams.tiltMid;
-            scaledRT60[5] *= activeParams.tiltMid;
-            scaledRT60[6] *= activeParams.tiltMid;
-            scaledRT60[7] *= activeParams.tiltHigh;
-            scaledRT60[8] *= activeParams.tiltHigh;
-            scaledRT60[9] *= activeParams.tiltHigh;
-            for (int b = 0; b < NUM_BANDS; ++b)
-                scaledRT60[b] *= activeParams.rtBands[b];
-        }
+        // ─────────────────────────────────────────────────────────────────────────
+        //  ★ ②修正: proMode フラグに関係なく常に Tilt / 帯域ノブを適用する
+        // ─────────────────────────────────────────────────────────────────────────
+        //   旧実装: if (activeParams.proMode) { ... }
+        //   ProMode を OFF にするとユーザーが設定した Tilt/帯域が無視され、
+        //   RT60 グラフが元のカーブに戻っていた。
+        //
+        //   新実装: 常に適用。デフォルト値が全て 1.0f なので、
+        //   ユーザーが変更していなければ scaledRT60 に変化はなく、
+        //   アルゴリズム切替時に loadPresetDefaults() が 1.0f にリセットする
+        //   ため、副作用は一切ない。
+        // ─────────────────────────────────────────────────────────────────────────
+        scaledRT60[0] *= activeParams.tiltLow;
+        scaledRT60[1] *= activeParams.tiltLow;
+        scaledRT60[2] *= activeParams.tiltLow;
+        scaledRT60[3] *= activeParams.tiltMid;
+        scaledRT60[4] *= activeParams.tiltMid;
+        scaledRT60[5] *= activeParams.tiltMid;
+        scaledRT60[6] *= activeParams.tiltMid;
+        scaledRT60[7] *= activeParams.tiltHigh;
+        scaledRT60[8] *= activeParams.tiltHigh;
+        scaledRT60[9] *= activeParams.tiltHigh;
+        for (int b = 0; b < NUM_BANDS; ++b)
+            scaledRT60[b] *= activeParams.rtBands[b];
 
 #if AMBIENCE_USE_STAGE2_ABSORPTION
         std::array<float, NUM_BANDS> targetDbAccum;
@@ -340,25 +350,6 @@ namespace FDNReverb {
         const float diffuserGain = 0.25f + effectiveDiffusion * 0.55f;
         const float effectiveApfGain = apfGain * (0.60f + effectiveDiffusion * 0.40f);
 
-        // ─────────────────────────────────────────────────────────────────────────
-        //  ★ Step A: ステレオ広がり強化
-        // ─────────────────────────────────────────────────────────────────────────
-        //   stereoWidth に応じて以下のステレオ要素を協調させる:
-        //
-        //   1. サイド成分注入係数 (sideBoost):
-        //      width × 1.5 倍に強化 (元: width × 1.0)
-        //      → L/R 入力の差分成分が FDN により強く注入される
-        //
-        //   2. FDN 出力 L/R 脱相関 (decorrelation):
-        //      width=0   → L/R 完全一致 (モノ)
-        //      width=0.5 → 50% 脱相関
-        //      width=1   → 100% 脱相関 (各 ch は L か R のみ寄与)
-        //
-        //   3. ER 左右非対称強化:
-        //      偶数タップ → L 主体 (R 漏れ係数 = (1 - width) × 0.7)
-        //      奇数タップ → R 主体 (L 漏れ係数 = (1 - width) × 0.7)
-        //      → width=1 で完全 L/R 分離、width=0 で完全モノ
-        // ─────────────────────────────────────────────────────────────────────────
         const float sideBoost = stereoWidth * 1.5f;
         const float erLeakage = (1.0f - stereoWidth) * 0.7f;
 
@@ -404,7 +395,6 @@ namespace FDNReverb {
                 }
             }
 
-            // ── ER Tapped Delay (★ Step A: 左右非対称強化) ──
             if (!bypassER) {
                 erDelay.write(midIn);
                 float erTotalL = 0.0f, erTotalR = 0.0f;
@@ -412,12 +402,10 @@ namespace FDNReverb {
                     float tapValue = erDelay.read(currentERDelaySamples[t]);
                     float tapGain = currentERGains[t] * 0.5f;
                     if (t % 2 == 0) {
-                        // 偶数タップ: L 主体、R は erLeakage 倍のみ
                         erTotalL += tapValue * tapGain;
                         erTotalR += tapValue * tapGain * erLeakage;
                     }
                     else {
-                        // 奇数タップ: R 主体、L は erLeakage 倍のみ
                         erTotalR += tapValue * tapGain;
                         erTotalL += tapValue * tapGain * erLeakage;
                     }
@@ -455,14 +443,10 @@ namespace FDNReverb {
 
                 nextFb[i] = apfOut;
 
-                // ★ Step A: サイド成分注入強化 (sideBoost 適用)
                 const float sideForCh = (i % 2 == 0 ? +sideIn : -sideIn) * sideBoost;
                 const float fdnInputForThisCh = (fdnInputMid + sideForCh) * 0.25f;
                 fdnDelays[i].write(fdnInputForThisCh + currentFb[i]);
 
-                // ★ Step A: FDN 出力 L/R 脱相関強化
-                //   width=1 → 反対側への漏れ 0% (完全分離)
-                //   width=0 → 反対側への漏れ 100% (完全モノ)
                 const float crossLeak = 1.0f - stereoWidth;
                 if (i % 2 == 0) {
                     fdnOutL += apfOut;

@@ -26,11 +26,6 @@ namespace FDNReverb {
         addFloat(ParamID::PreDelay, "Pre-Delay", 0.0f, 500.0f, 10.0f, 1.0f, "ms");
         addFloat(ParamID::RoomSize, "Room Size", 0.3f, 2.0f, 1.0f);
         addFloat(ParamID::DecayTime, "Decay Time", 0.1f, 20.0f, 1.5f, 0.35f, "s");
-
-        // ★ Step A: HF Damping / LF Absorption のデフォルトを 0 に
-        //   これにより、プリセット選択直後に RT60 グラフのオレンジが
-        //   灰色（プリセット元カーブ）と完全に一致するようになる。
-        //   ユーザーが意図的に補正を加えるまでは「素の音」を提示。
         addFloat(ParamID::HFDamping, "HF Damping", 0.0f, 1.0f, 0.0f);
         addFloat(ParamID::LFAbsorption, "LF Absorption", 0.0f, 1.0f, 0.0f);
 
@@ -49,13 +44,12 @@ namespace FDNReverb {
             0,
             juce::AudioParameterChoiceAttributes().withAutomatable(false)));
 
-        // ★ Step A: Wet/Dry 表示統一
-        //   Wet 最大を -3dB から 0dB に変更（ユーザー表示の混乱を解消）。
-        //   内部では PluginProcessor.cpp で -3dB のオフセットを適用し、
-        //   実効的に Wet 最大が -3dB 相当となるよう保持。
-        //   デフォルトは Wet/Dry 両方 -12dB（バランス維持）。
-        addFloat(ParamID::WetLevel, "Wet", -60.0f, 0.0f, -12.0f, 1.0f, "dB");
-        addFloat(ParamID::DryLevel, "Dry", -60.0f, 0.0f, -12.0f, 1.0f, "dB");
+        // ★ Step B: Wet -6dB / Dry 0dB をデフォルトに変更
+        //   内部オフセット -3dB (PluginProcessor.cpp) により
+        //   実効 Wet は表示値 -3dB 分低くなる。
+        //   Wet=-6dB 表示 → 実効 -9dB、 Wet=0dB 表示 → 実効 -3dB
+        addFloat(ParamID::WetLevel, "Wet", -60.0f, 0.0f, -6.0f, 1.0f, "dB");
+        addFloat(ParamID::DryLevel, "Dry", -60.0f, 0.0f, 0.0f, 1.0f, "dB");
 
         addFloat(ParamID::DuckAmount, "Ducking", 0.0f, 20.0f, 0.0f, 1.0f, "dB");
         addFloat(ParamID::DuckAttack, "Duck Attack", 0.5f, 100.0f, 10.0f, 0.4f, "ms");
