@@ -187,11 +187,14 @@ FDNReverbEditor::FDNReverbEditor(FDNReverbAudioProcessor& p)
     presetDeleteButton.onClick = [this] { deleteCurrentPreset(); };
 
     // コールバック設定
+// コンストラクタ内のコールバック設定部分
     presetManager->onPresetListChanged = [this] { refreshPresetCombo(); };
-    presetManager->onPresetLoaded = [this](const juce::String&) { refreshPresetCombo(); };
 
-    refreshPresetCombo();
-
+    // ★ 修正: プリセット名が変わるたびに Processor に通知する
+    presetManager->onPresetLoaded = [this](const juce::String& name) {
+        audioProcessor.setLastSavedPresetName(name);
+        refreshPresetCombo();
+        };
     // ── Visualizers ──
     rt60Viz.setProcessor(&p);
     decayCurveViz.setProcessor(&p);
@@ -237,6 +240,8 @@ FDNReverbEditor::FDNReverbEditor(FDNReverbAudioProcessor& p)
     setupValue(labelC80Value);
     setupValue(labelEDTValue);
 
+    // ─── 変更後 ───
+    refreshPresetCombo();     // ★ 追加：起動時にコンボを初期化
     updatePanelVisibility();
     startTimerHz(60);
 }
@@ -560,14 +565,28 @@ void FDNReverbEditor::paint(juce::Graphics& g)
 void FDNReverbEditor::refreshPresetCombo()
 {
     presetCombo.clear(juce::dontSendNotification);
-
     auto names = presetManager->getPresetNames();
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  ★ 修正: 起動時に Processor から保存済みのプリセット名を復元
+    // ─────────────────────────────────────────────────────────────────────
+    //  エディターが閉じられると PresetManager ごと破棄されるため、
+    //  currentPresetName が空になる。
+    //  Processor 側に lastSavedPresetName として永続化した名前を
+    //  ここで PresetManager に再セットすることで、
+    //  コンボボックスの選択が正しく復元される。
+    // ─────────────────────────────────────────────────────────────────────
+    if (presetManager->getCurrentPresetName().isEmpty()) {
+        auto saved = audioProcessor.getLastSavedPresetName();
+        if (saved.isNotEmpty())
+            presetManager->setCurrentPresetName(saved);
+    }
+
     if (names.isEmpty()) {
         presetCombo.addItem("-- No Presets --", 1);
         presetCombo.setSelectedItemIndex(0, juce::dontSendNotification);
-        // ─── 変更後 ───
         presetDeleteButton.setEnabled(false);
-        presetLoadButton.setEnabled(false);    // ★ 追加
+        presetLoadButton.setEnabled(false);
         presetPrevButton.setEnabled(false);
         presetNextButton.setEnabled(false);
         return;
@@ -582,9 +601,8 @@ void FDNReverbEditor::refreshPresetCombo()
     else
         presetCombo.setSelectedItemIndex(0, juce::dontSendNotification);
 
-    // ─── 変更後 ───
     presetDeleteButton.setEnabled(true);
-    presetLoadButton.setEnabled(true);           // ★ 追加
+    presetLoadButton.setEnabled(true);
     presetPrevButton.setEnabled(names.size() > 1);
     presetNextButton.setEnabled(names.size() > 1);
 }

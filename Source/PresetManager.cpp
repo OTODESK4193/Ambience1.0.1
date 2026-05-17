@@ -42,10 +42,13 @@ void PresetManager::refreshPresetList()
 //  PluginProcessor の getStateInformation() をそのまま利用する。
 //  これにより PluginProcessor の変更が一切不要になる。
 // ─────────────────────────────────────────────────────────────────────────────
+// ─── 変更後 ───
 bool PresetManager::savePreset(const juce::String& name)
 {
     if (name.isEmpty()) return false;
-
+    // ★ 修正: getStateInformation の前に名前を Processor に通知する
+    // これにより getStateInformation が正しい名前を ValueTree に書き込める
+    processor.setLastSavedPresetName(name);
     juce::MemoryBlock data;
     processor.getStateInformation(data);
 

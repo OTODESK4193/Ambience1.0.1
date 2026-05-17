@@ -72,5 +72,20 @@ private:
     std::atomic<float> outputRMS_L{ 0.f }, outputRMS_R{ 0.f };
     double lastSampleRate{ 0.0 };
 
+    // ★ 追加: セッション保存用のプリセット名
+// PresetManager はエディター側に存在するため、
+// Processor 側でプリセット名のみ保持してセッション保存に対応する。
+    juce::String lastSavedPresetName;
+
+public:
+    // エディターから呼び出してプリセット名を Processor に通知する
+    void setLastSavedPresetName(const juce::String& name) noexcept {
+        lastSavedPresetName = name;
+    }
+    juce::String getLastSavedPresetName() const noexcept {
+        return lastSavedPresetName;
+    }
+
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FDNReverbAudioProcessor)
 };

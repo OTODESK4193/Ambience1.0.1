@@ -143,6 +143,14 @@ void FDNReverbAudioProcessor::processBlock(
 
 void FDNReverbAudioProcessor::getStateInformation(juce::MemoryBlock& d) {
     auto state = apvts.copyState();
+
+    // ★ 修正: 現在のプリセット名を ValueTree に保存
+    // エディターが存在する場合、PresetManager から名前を取得する。
+    // エディターは AudioProcessor が直接保持しないため、
+    // プリセット名を Processor 側で管理するフィールドを追加する。
+    if (lastSavedPresetName.isNotEmpty())
+        state.setProperty("currentPresetName", lastSavedPresetName, nullptr);
+
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     copyXmlToBinary(*xml, d);
 }
@@ -150,7 +158,12 @@ void FDNReverbAudioProcessor::getStateInformation(juce::MemoryBlock& d) {
 void FDNReverbAudioProcessor::setStateInformation(const void* d, int s) {
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(d, s));
     if (xml && xml->hasTagName(apvts.state.getType())) {
-        apvts.replaceState(juce::ValueTree::fromXml(*xml));
+        auto tree = juce::ValueTree::fromXml(*xml);
+
+        // ★ 修正: プリセット名を復元
+        lastSavedPresetName = tree.getProperty("currentPresetName", "").toString();
+
+        apvts.replaceState(tree);
         paramsNeedUpdate = true;
     }
 }

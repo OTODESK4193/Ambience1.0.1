@@ -32,8 +32,11 @@ public:
 
     // ─── 状態取得 ───
     juce::StringArray getPresetNames()       const noexcept { return presetNames; }
+    // ─── 変更後 ───
     juce::String      getCurrentPresetName() const noexcept { return currentPresetName; }
+    void              setCurrentPresetName(const juce::String& name) noexcept { currentPresetName = name; }  // ★ 追加
     int               getCurrentPresetIndex() const noexcept;
+
     bool              hasPresets()           const noexcept { return !presetNames.isEmpty(); }
 
     // ─── フォルダ取得 ───
