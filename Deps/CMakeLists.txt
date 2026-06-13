@@ -1,0 +1,1 @@
+add_subdirectory(JUCE EXCLUDE_FROM_ALL)
