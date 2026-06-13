@@ -300,11 +300,12 @@ namespace FDNReverb {
         //  長い残響ほど、コムフィルタのピークをぼかすために深いモジュレーションが必要。
         //  Lexicon / Strymon 等の高品位リバーブの標準手法。
         //
+        //  ★ モジュレーション深さスケーリング（抑制版）
         //  RT60 ≤ 1.0s → 1.0x (変化なし)
-        //  RT60 = 3.0s → 2.6x
-        //  RT60 ≥ 6.0s → 5.0x (上限)
+        //  RT60 = 3.0s → 2.0x
+        //  RT60 ≥ 5.0s → 3.0x (上限)
         // ─────────────────────────────────────────────────────────────────────────
-        modDepthScale = 1.0f + juce::jlimit(0.0f, 4.0f, (rt60Mid - 1.0f) * 0.8f);
+        modDepthScale = 1.0f + juce::jlimit(0.0f, 2.0f, (rt60Mid - 1.0f) * 0.5f);
 
         constexpr float baseDB = 16.0f;
         float decayCompDB = 7.0f * std::log10(rt60Mid);
@@ -408,8 +409,11 @@ namespace FDNReverb {
         // ★ CPU最適化: fs を float にキャッシュ（processBlock 全域で使用）
         const float fsf = static_cast<float>(fs);
 
-        // ★ 金属音対策: モジュレーション深さをDecay依存でスケーリング
-        const float depthSamples = activeParams.modAmount * 0.002f * fsf * modDepthScale;
+        // ★ モジュレーション深さ: 二乗カーブ + ベース係数抑制
+        //   modAmount² でノブ低域を緩やかに、0.001f で全体深さを半減
+        //   旧: modAmt=0.5 → 48smp(1ms) / 新: modAmt=0.5 → 12smp(0.25ms)
+        const float modAmtCurved = activeParams.modAmount * activeParams.modAmount;
+        const float depthSamples = modAmtCurved * 0.001f * fsf * modDepthScale;
         const float wetGain = juce::Decibels::decibelsToGain(activeParams.wetDB);
         const float stereoWidth = activeParams.stereoWidth;
         const float erLevel = activeParams.erLevel;
