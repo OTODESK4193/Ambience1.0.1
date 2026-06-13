@@ -291,7 +291,9 @@ This software is provided "as-is", without any warranty of any kind. While extre
 
 ## License
 
-This project is free and open-source, distributed under the **GPLv3 License** (inherited via the JUCE framework). You are free to study, modify, and redistribute the source code under the same terms.
+This project is licensed under the GNU Affero General Public License v3.0 (AGPLv3) - see the [LICENSE](LICENSE) file for details.
+
+This software is built using the **JUCE 8** framework. In accordance with JUCE 8's open-source licensing terms, this entire project is distributed under the AGPLv3.
 
 
 ## Credits
