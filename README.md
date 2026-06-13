@@ -201,7 +201,7 @@ A comprehensive manual covering detailed technical specifications and operationa
 
 ### Requirements
 
-* **JUCE** 8.0.x — place at `C:/JUCE` or update the path in `CMakeLists.txt`
+* **JUCE** 8.0.x — (used as a submodule)
 * **CMake** 3.22 or higher
 * **Visual Studio** 2022 (MSVC, C++20)
 * **AVX2-capable CPU** (required for SIMD optimizations)
